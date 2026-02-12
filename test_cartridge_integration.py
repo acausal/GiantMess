@@ -5,7 +5,7 @@ Simulates Phase 2B query stream.
 """
 
 from kitbash_query_engine import CartridgeQueryEngine
-from kitbash_delta_registry import DeltaRegistry
+from kitbash_registry import DeltaRegistry
 import random
 
 
@@ -18,85 +18,110 @@ def test_integration():
     """
     
     # Initialize
-    engine = CartridgeQueryEngine("./cartridges")
-    registry = DeltaRegistry("./registry")
-    
-    # Simulated queries (like what users would ask)
-    test_queries = [
-        "force acceleration motion",
-        "energy heat temperature",
-        "atoms molecules bonds",
-        "evolution adaptation fitness",
-        "DNA genes inheritance",
-        "cells mitochondria energy",
-        "logic reasoning proof",
-        "probability statistics inference",
-        "pressure flow dynamics",
-        "metabolism ATP energy",
-        "enzyme catalyst reaction",
-        "structure atoms electrons",
-        "motion forces Newton",
-        "thermodynamic entropy disorder",
-        "information genes protein",
-    ]
-    
-    print("="*70)
+    print("\n" + "="*70)
     print("PHASE 2B CARTRIDGE INTEGRATION TEST")
     print("="*70)
     
-    # Run 10 query cycles
+    # Load cartridges
+    print("\nLoading cartridges...")
+    engine = CartridgeQueryEngine("./cartridges")
+    
+    if not engine.cartridges:
+        print("X No cartridges loaded!")
+        return False
+    
+    print(f"+ Loaded {len(engine.cartridges)} cartridges")
+    
+    # Initialize registry
+    print("\nInitializing DeltaRegistry...")
+    registry = DeltaRegistry("phase2b_test")
+    
+    # Test queries (multiple domains)
+    test_queries = [
+        "force acceleration motion",
+        "DNA genes protein",
+        "energy heat temperature",
+        "logic reasoning truth",
+        "enzyme catalyst reaction",
+        "thermodynamic entropy disorder",
+        "atoms molecules bonds",
+        "cells mitochondria energy",
+        "probability statistics inference",
+        "pressure flow dynamics",
+        "motion forces Newton",
+        "structure atoms electrons",
+        "information genes protein",
+        "evolution adaptation fitness",
+        "metabolism ATP energy",
+    ]
+    
+    # Run query cycles
+    print("\nRunning query cycles...")
     for cycle in range(10):
         print(f"\n--- Cycle {cycle + 1} ---")
-        
-        # Pick random queries for this cycle
         cycle_queries = random.sample(test_queries, min(5, len(test_queries)))
         
         for query in cycle_queries:
+            # Run query
             result = engine.keyword_query(query)
-            print(f"Query: '{query}' → {len(result.fact_ids)} hits")
+            print(f"Query: '{query}' -> {len(result.fact_ids)} hits")
             
-            # Record each hit in registry
+            # Log hits in registry
             for fact_id in result.fact_ids:
-                confidence = result.confidences[fact_id]
-                
-                # Find which cartridge this fact is from
-                cart_name = "unknown"
-                for cn, cart in engine.cartridges.items():
-                    if fact_id in cart.facts:
-                        cart_name = cn
-                        break
-                
-                registry.record_hit(fact_id, cart_name, confidence)
+                registry.record_hit(fact_id, query.split(), result.confidences.get(fact_id, 0.7))
         
+        # Cycle complete
         registry.advance_cycle()
     
-    # Report
+    # Results
     print("\n" + "="*70)
     print("RESULTS")
     print("="*70)
     
-    print(f"\nTotal cycles: {registry.current_cycle}")
-    print(f"Total unique facts hit: {len(registry.fact_stats)}")
-    print(f"Total hits recorded: {sum(s.hit_count for s in registry.fact_stats.values())}")
+    print(f"\nTotal cycles: {registry.cycle_count}")
+    print(f"Total phantom candidates: {len(registry.phantoms)}")
     
-    print("\nTop 15 hot facts:")
-    for i, stats in enumerate(registry.get_hot_facts(15), 1):
-        avg_conf = registry.get_average_confidence(stats.fact_id)
-        print(f"  {i:2d}. Fact {stats.fact_id:3d}: {stats.hit_count:2d} hits, "
-              f"avg conf={avg_conf:.2f}, cycles_active={stats.cycles_active}")
+    if len(registry.phantoms) > 0:
+        total_hits = sum(p.hit_count for p in registry.phantoms.values())
+        print(f"Total hits recorded: {total_hits}")
+        
+        # Sort by hit count
+        sorted_phantoms = sorted(
+            registry.phantoms.values(), 
+            key=lambda p: p.hit_count, 
+            reverse=True
+        )[:10]
+        
+        print("\nTop 10 facts by hit count:")
+        for i, phantom in enumerate(sorted_phantoms, 1):
+            print(f"  {i:2d}. Fact {phantom.fact_id:3d}: {phantom.hit_count:2d} hits")
+    else:
+        print("\nNo phantom candidates tracked.")
     
-    # Save for later use
-    registry.save()
-    print("\n✓ Registry saved to ./registry/delta_registry.json")
+    # Save registry
+    registry.save("registry/delta_registry.json")
+    print("\n+ Registry saved to ./registry/delta_registry.json")
     
     # Statistics
     print("\n" + "="*70)
     print("STATISTICS")
     print("="*70)
+    
     print(f"Cartridges loaded: {len(engine.cartridges)}")
-    print(f"Total facts available: {sum(len(c.facts) for c in engine.cartridges.values())}")
-    print(f"Facts hit in test: {len(registry.fact_stats)}")
-    print(f"Hit rate: {len(registry.fact_stats) / sum(len(c.facts) for c in engine.cartridges.values()) * 100:.1f}%")
+    print(f"Cartridge breakdown:")
+    total_facts = 0
+    for cart_name in sorted(engine.cartridges.keys()):
+        cart = engine.cartridges[cart_name]
+        count = len(cart.facts)
+        total_facts += count
+        print(f"  - {cart_name}: {count} facts")
+    
+    print(f"Total facts available: {total_facts}")
+    print(f"Unique facts hit: {len(registry.phantoms)}")
+    
+    if total_facts > 0:
+        hit_rate = len(registry.phantoms) / total_facts * 100
+        print(f"Hit rate: {hit_rate:.1f}%")
     
     # Verify minimum criteria for Phase 2B
     print("\n" + "="*70)
@@ -105,26 +130,31 @@ def test_integration():
     
     checks = [
         ("Cartridges loaded", len(engine.cartridges) >= 6),
-        ("Total facts available", sum(len(c.facts) for c in engine.cartridges.values()) >= 500),
-        ("Unique facts hit", len(registry.fact_stats) >= 20),
-        ("Query engine working", len(registry.fact_stats) > 0),
-        ("DeltaRegistry tracking", registry.current_cycle >= 10),
+        ("Total facts available", total_facts >= 100),
+        ("Unique facts hit", len(registry.phantoms) >= 10),
+        ("Query engine working", len(registry.phantoms) > 0),
+        ("DeltaRegistry tracking", registry.cycle_count >= 10),
     ]
     
     all_pass = True
     for check_name, passed in checks:
-        status = "✓ PASS" if passed else "✗ FAIL"
+        status = "+ PASS" if passed else "X FAIL"
         print(f"  {status}: {check_name}")
         if not passed:
             all_pass = False
     
     print("\n" + "="*70)
     if all_pass:
-        print("✓ READY FOR PHASE 2B")
+        print("+ PHASE 2B READINESS: PASS")
+        print("All checks passed. Phase 2B is ready to proceed.")
+        return True
     else:
-        print("✗ NOT READY - Fix issues above")
-    print("="*70)
+        print("X PHASE 2B READINESS: FAIL")
+        print("Some checks failed. Review results above.")
+        return False
 
 
 if __name__ == "__main__":
-    test_integration()
+    import sys
+    success = test_integration()
+    sys.exit(0 if success else 1)

@@ -276,18 +276,43 @@ class Cartridge:
         self._init_metadata()
         self._init_manifest()
         
-        print(f"✓ Created cartridge: {self.cartridge_dir}")
+        print(f"âœ“ Created cartridge: {self.cartridge_dir}")
 
     def load(self) -> None:
-        """Load existing cartridge from disk."""
+        """Load existing cartridge from disk - handles fresh cartridges gracefully."""
         if not self.cartridge_dir.exists():
             raise FileNotFoundError(f"Cartridge not found: {self.cartridge_dir}")
         
+        # Ensure database exists - create if missing
+        if not self.db_path.exists():
+            self._create_database()
+        
         self._open_database()
         self._load_indices()
-        self._load_metadata()
-        self._load_manifest()
-        self._load_annotations()
+        
+        # Load metadata with fallback - initialize if missing
+        if self.metadata_path.exists():
+            try:
+                self._load_metadata()
+            except (json.JSONDecodeError, IOError):
+                self._init_metadata()
+        else:
+            self._init_metadata()
+        
+        # Load manifest with fallback - initialize if missing
+        if self.manifest_path.exists():
+            try:
+                self._load_manifest()
+            except (json.JSONDecodeError, IOError):
+                self._init_manifest()
+        else:
+            self._init_manifest()
+        
+        # Load annotations with fallback - initialize if missing
+        try:
+            self._load_annotations()
+        except (FileNotFoundError, json.JSONDecodeError, IOError):
+            self.annotations = {}
         
         print(f"✓ Loaded cartridge: {self.cartridge_dir}")
 
@@ -301,7 +326,7 @@ class Cartridge:
         self._save_manifest()
         self._save_annotations()
         
-        print(f"✓ Saved cartridge: {self.cartridge_dir}")
+        print(f"âœ“ Saved cartridge: {self.cartridge_dir}")
 
     # ========================================================================
     # DATABASE OPERATIONS
@@ -434,6 +459,25 @@ class Cartridge:
             fact_ids
         )
         return {row[0]: row[1] for row in cursor.fetchall()}
+    
+    def get_all_facts(self) -> Dict[int, str]:
+        """
+        Retrieve all facts in cartridge.
+        
+        Returns:
+            Dict mapping fact_id -> content
+        """
+        cursor = self.db.cursor()
+        cursor.execute("SELECT id, content FROM facts WHERE status != 'archived'")
+        return {row[0]: row[1] for row in cursor.fetchall()}
+    
+    @property
+    def facts(self) -> Dict[int, str]:
+        """
+        Compatibility property: returns all facts as a dictionary.
+        For use with query engines and tools expecting dict interface.
+        """
+        return self.get_all_facts()
 
     # ========================================================================
     # QUERY OPERATIONS
@@ -689,18 +733,35 @@ class Cartridge:
         with open(self.access_log_path, 'w') as f:
             json.dump(access_log_json, f, indent=2)
 
+    def _rebuild_content_hash_index(self) -> None:
+        """Rebuild content_hash_index from database (used on startup if index file missing)."""
+        if not self.db:
+            return
+        
+        self.content_hash_index = {}
+        cursor = self.db.cursor()
+        cursor.execute("SELECT id, content_hash FROM facts WHERE status != 'archived'")
+        
+        for row in cursor.fetchall():
+            fact_id = row[0]
+            content_hash = row[1]
+            self.content_hash_index[content_hash] = fact_id
+
     def _load_indices(self) -> None:
-        """Load indices from disk."""
+        """Load indices from disk, rebuilding from database if necessary."""
         # Keyword index
         if self.keyword_index_path.exists():
             with open(self.keyword_index_path) as f:
                 data = json.load(f)
                 self.keyword_index = {k: set(v) for k, v in data.items()}
         
-        # Content hash index
+        # Content hash index - rebuild from database if missing
         if self.content_hash_index_path.exists():
             with open(self.content_hash_index_path) as f:
                 self.content_hash_index = json.load(f)
+        else:
+            # Rebuild from database if index file doesn't exist
+            self._rebuild_content_hash_index()
         
         # Access log
         if self.access_log_path.exists():
@@ -953,7 +1014,7 @@ if __name__ == "__main__":
     
     # Add some facts
     fact1 = cart.add_fact(
-        "PLA requires 60°C ±5°C for optimal gelling",
+        "PLA requires 60Â°C Â±5Â°C for optimal gelling",
         AnnotationMetadata(
             fact_id=0,  # Will be set by add_fact
             confidence=0.92,
