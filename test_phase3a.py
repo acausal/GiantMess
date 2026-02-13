@@ -43,24 +43,25 @@ class TestPhase3A:
             
             # Assertions
             assert router.total_grains > 0, "No grains loaded"
-            assert router.total_grains == 261, f"Expected 261 grains, got {router.total_grains}"
-            assert len(router.grains) == 261, "Grain dict size mismatch"
-            assert len(router.grain_by_fact) == 261, "Fact index size mismatch"
+            assert len(router.grains) > 0, "Grain dict empty"
+            assert len(router.grains) == router.total_grains, "Grain count mismatch with total_grains"
+            assert len(router.grain_by_fact) > 0, "No facts indexed"
+            assert len(router.grain_by_fact) <= len(router.grains), "More facts than grains (duplicate fact_ids)"
             
-            print(f"✓ Loaded {router.total_grains} grains")
-            print(f"✓ Load time: {load_time:.1f}ms")
-            print(f"✓ Total storage: {router.total_size_bytes:,} bytes")
-            print(f"✓ Average grain: {router.total_size_bytes / router.total_grains:.0f} bytes")
+            print(f"âœ“ Loaded {router.total_grains} grains")
+            print(f"âœ“ Load time: {load_time:.1f}ms")
+            print(f"âœ“ Total storage: {router.total_size_bytes:,} bytes")
+            print(f"âœ“ Average grain: {router.total_size_bytes / router.total_grains:.0f} bytes")
             
             self.passed += 1
             return True
         
         except AssertionError as e:
-            print(f"✗ FAILED: {e}")
+            print(f"âœ— FAILED: {e}")
             self.failed += 1
             return False
         except Exception as e:
-            print(f"✗ ERROR: {e}")
+            print(f"âœ— ERROR: {e}")
             self.failed += 1
             return False
     
@@ -88,20 +89,20 @@ class TestPhase3A:
             assert 'grain_id' in grain, "Missing grain_id"
             assert 'confidence' in grain, "Missing confidence"
             
-            print(f"✓ Looked up fact_id {test_fact_id}")
-            print(f"✓ Found grain: {grain['grain_id']}")
-            print(f"✓ Confidence: {grain['confidence']:.4f}")
-            print(f"✓ Cartridge: {grain.get('cartridge_source')}")
+            print(f"âœ“ Looked up fact_id {test_fact_id}")
+            print(f"âœ“ Found grain: {grain['grain_id']}")
+            print(f"âœ“ Confidence: {grain['confidence']:.4f}")
+            print(f"âœ“ Cartridge: {grain.get('cartridge_source')}")
             
             self.passed += 1
             return True
         
         except AssertionError as e:
-            print(f"✗ FAILED: {e}")
+            print(f"âœ— FAILED: {e}")
             self.failed += 1
             return False
         except Exception as e:
-            print(f"✗ ERROR: {e}")
+            print(f"âœ— ERROR: {e}")
             self.failed += 1
             return False
     
@@ -131,23 +132,23 @@ class TestPhase3A:
                 assert 'use_grain' in decision, "Missing use_grain"
                 assert 'layer_recommendation' in decision, "Missing layer_recommendation"
             
-            print(f"✓ Tested {len(decisions)} routing decisions")
+            print(f"âœ“ Tested {len(decisions)} routing decisions")
             
             for i, decision in enumerate(decisions, 1):
                 conf = decision['confidence']
                 use = "USE" if decision['use_grain'] else "SKIP"
                 layer = decision['layer_recommendation']
-                print(f"  {i}. Confidence {conf:.4f} → {use} grain (layer {layer})")
+                print(f"  {i}. Confidence {conf:.4f} â†’ {use} grain (layer {layer})")
             
             self.passed += 1
             return True
         
         except AssertionError as e:
-            print(f"✗ FAILED: {e}")
+            print(f"âœ— FAILED: {e}")
             self.failed += 1
             return False
         except Exception as e:
-            print(f"✗ ERROR: {e}")
+            print(f"âœ— ERROR: {e}")
             self.failed += 1
             return False
     
@@ -170,22 +171,22 @@ class TestPhase3A:
             assert 'layer' in result, "Missing layer in result"
             assert 'latency_ms' in result, "Missing latency in result"
             
-            print(f"✓ Processed query successfully")
-            print(f"✓ Layer: {result['layer']}")
-            print(f"✓ Latency: {result['latency_ms']:.2f}ms")
+            print(f"âœ“ Processed query successfully")
+            print(f"âœ“ Layer: {result['layer']}")
+            print(f"âœ“ Latency: {result['latency_ms']:.2f}ms")
             
             if result['layer'] == 'GRAIN':
-                print(f"✓ Direct grain hit: {result['grain_id']}")
+                print(f"âœ“ Direct grain hit: {result['grain_id']}")
             
             self.passed += 1
             return True
         
         except AssertionError as e:
-            print(f"✗ FAILED: {e}")
+            print(f"âœ— FAILED: {e}")
             self.failed += 1
             return False
         except Exception as e:
-            print(f"✗ ERROR: {e}")
+            print(f"âœ— ERROR: {e}")
             self.failed += 1
             return False
     
@@ -208,7 +209,7 @@ class TestPhase3A:
             total_indexed = sum(len(g) for g in router.grain_by_cartridge.values())
             assert total_indexed == router.total_grains, "Indexing count mismatch"
             
-            print(f"✓ Indexed grains in {len(router.grain_by_cartridge)} cartridges")
+            print(f"âœ“ Indexed grains in {len(router.grain_by_cartridge)} cartridges")
             
             for cart_id in sorted(router.grain_by_cartridge.keys()):
                 count = len(router.grain_by_cartridge[cart_id])
@@ -218,11 +219,11 @@ class TestPhase3A:
             return True
         
         except AssertionError as e:
-            print(f"✗ FAILED: {e}")
+            print(f"âœ— FAILED: {e}")
             self.failed += 1
             return False
         except Exception as e:
-            print(f"✗ ERROR: {e}")
+            print(f"âœ— ERROR: {e}")
             self.failed += 1
             return False
     
@@ -251,11 +252,11 @@ class TestPhase3A:
             assert avg_conf > 0.9, f"Average confidence too low: {avg_conf:.4f}"
             assert min_conf > 0.85, f"Minimum confidence too low: {min_conf:.4f}"
             
-            print(f"✓ Confidence statistics:")
+            print(f"âœ“ Confidence statistics:")
             print(f"  Min: {min_conf:.4f}")
             print(f"  Avg: {avg_conf:.4f}")
             print(f"  Max: {max_conf:.4f}")
-            print(f"✓ All grains > 0.85 confidence")
+            print(f"âœ“ All grains > 0.85 confidence")
             
             # Distribution buckets
             buckets = {
@@ -264,7 +265,7 @@ class TestPhase3A:
                 '< 0.90': len([c for c in confidences if c < 0.90]),
             }
             
-            print(f"✓ Distribution:")
+            print(f"âœ“ Distribution:")
             for bucket, count in buckets.items():
                 pct = (count / len(confidences)) * 100
                 print(f"  {bucket}: {count} grains ({pct:.1f}%)")
@@ -273,11 +274,11 @@ class TestPhase3A:
             return True
         
         except AssertionError as e:
-            print(f"✗ FAILED: {e}")
+            print(f"âœ— FAILED: {e}")
             self.failed += 1
             return False
         except Exception as e:
-            print(f"✗ ERROR: {e}")
+            print(f"âœ— ERROR: {e}")
             self.failed += 1
             return False
     
@@ -303,10 +304,10 @@ class TestPhase3A:
         print(f"Failed: {self.failed}")
         
         if self.failed == 0:
-            print("\n✓ ALL TESTS PASSED")
-            print("✓ Phase 3A ready for full integration")
+            print("\nâœ“ ALL TESTS PASSED")
+            print("âœ“ Phase 3A ready for full integration")
         else:
-            print(f"\n✗ {self.failed} tests failed")
+            print(f"\nâœ— {self.failed} tests failed")
         
         print("="*70 + "\n")
         

@@ -58,6 +58,7 @@ class GrainRouter:
         
         # Find all grain files
         grain_count = 0
+        duplicates = []
         
         for cartridge_dir in self.cartridges_dir.glob("*.kbc"):
             grains_dir = cartridge_dir / "grains"
@@ -74,6 +75,11 @@ class GrainRouter:
                     
                     grain_id = grain.get('grain_id')
                     if not grain_id:
+                        continue
+                    
+                    # Check for duplicate grain_id
+                    if grain_id in self.grains:
+                        duplicates.append((grain_id, cartridge_id, grain_file.name))
                         continue
                     
                     # Store grain
@@ -97,6 +103,14 @@ class GrainRouter:
                 
                 except Exception as e:
                     print(f"Warning: Could not load grain {grain_file}: {e}")
+        
+        # Report duplicates
+        if duplicates:
+            print(f"\nWarning: Found {len(duplicates)} duplicate grain_ids (skipped):")
+            for grain_id, cartridge, filename in duplicates[:10]:  # Show first 10
+                print(f"  - {grain_id} in {cartridge}/{filename}")
+            if len(duplicates) > 10:
+                print(f"  ... and {len(duplicates) - 10} more")
         
         # Sort by confidence (descending)
         self.grain_by_confidence.sort(reverse=True, key=lambda x: x[0])
@@ -279,7 +293,7 @@ if __name__ == "__main__":
     print("Initializing GrainRouter...")
     router = GrainRouter('./cartridges')
     
-    print(f"✓ Loaded {router.total_grains} grains in {router.load_time_ms:.1f}ms")
+    print(f"âœ“ Loaded {router.total_grains} grains in {router.load_time_ms:.1f}ms")
     
     # Print statistics
     router.print_statistics()
@@ -314,4 +328,4 @@ if __name__ == "__main__":
               f"(confidence: {grain.get('confidence', 0):.4f}, "
               f"fact: {grain.get('fact_id')})")
     
-    print("\n✓ GrainRouter ready for Layer 0 integration")
+    print("\nâœ“ GrainRouter ready for Layer 0 integration")
