@@ -202,7 +202,7 @@ class DeltaRegistry:
         phantom = self.phantoms[fact_id]
         
         # Check for persistent status
-        if phantom.hit_count >= self.persistence_threshold:
+        if len(phantom.confidence_history) >= self.persistence_threshold:
             avg_conf = statistics.mean(phantom.confidence_history)
             if avg_conf >= self.confidence_threshold:
                 phantom.status = "persistent"
@@ -226,15 +226,21 @@ class DeltaRegistry:
         """
         self.cycle_count += 1
         
-        # Record hit counts for each phantom in this cycle
+        # STEP 1: Update status for all phantoms BEFORE recording history
         for fact_id, phantom in self.phantoms.items():
-            if phantom.status == "persistent":
+            self._update_phantom_status(fact_id)
+        
+        # STEP 2: Record hit counts for each phantom in this cycle BEFORE resetting
+        for fact_id, phantom in self.phantoms.items():
+            # Always record to history if the phantom has been hit
+            if phantom.hit_count > 0 or phantom.status == "persistent":
                 self.cycle_history[fact_id].append(phantom.hit_count)
                 
-                # Check for harmonic lock
-                self._check_harmonic_lock(fact_id)
+                # Check for harmonic lock (only if persistent)
+                if phantom.status == "persistent":
+                    self._check_harmonic_lock(fact_id)
         
-        # Reset hit counts for next cycle
+        # STEP 3: Reset hit counts for next cycle
         for phantom in self.phantoms.values():
             phantom.hit_count = 0
     
