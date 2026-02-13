@@ -1,0 +1,45 @@
+# Kitbash Worker - Phase 3B
+# Template for worker processes (BitNet, Cartridge, Kobold)
+#
+# Build argument: WORKER_TYPE (bitnet, cartridge, kobold)
+# Environment: WORKER_NAME, WORKER_PORT, REDIS_HOST, REDIS_PORT
+
+FROM python:3.10-slim
+
+ARG WORKER_TYPE=bitnet
+
+WORKDIR /app
+
+# System dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy common modules
+COPY config.py .
+COPY redis_blackboard.py .
+COPY diagnostic_feed.py .
+
+# Copy worker-specific code (stubs for now)
+# In Phase 3C+, these will contain actual implementations
+# COPY worker_bitnet.py .
+# COPY worker_cartridge.py .
+# COPY worker_kobold.py .
+
+# Copy config
+COPY kitbash_config.yaml .
+COPY .env.example .
+
+# Health check - verify Redis connectivity
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
+    CMD python -c "import redis; redis.Redis(host='redis', port=6379).ping()" || exit 1
+
+# Worker startup script
+# Currently a placeholder - will be implemented in Phase 3C
+ENV WORKER_TYPE=${WORKER_TYPE}
+ENTRYPOINT ["python", "-c", "import sys; print(f'Worker {sys.argv[1]} starting...'); import time; time.sleep(10000)"]
+CMD ["${WORKER_TYPE}"]

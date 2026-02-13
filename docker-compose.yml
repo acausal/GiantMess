@@ -1,0 +1,181 @@
+# Kitbash Phase 3B - Docker Compose Configuration
+# Orchestrates Redis, Kitbash core, and worker services
+#
+# Usage:
+#   docker-compose up -d              # Start all services
+#   docker-compose down               # Stop all services
+#   docker-compose logs -f redis      # Stream Redis logs
+#   docker-compose ps                 # Show service status
+#
+# Environment variables are loaded from .env file
+
+version: '3.8'
+
+services:
+  # Redis Blackboard - Central coordination layer
+  redis:
+    image: redis:7-alpine
+    container_name: kitbash_redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - kitbash_network
+    environment:
+      - REDIS_PORT=${REDIS_PORT:-6379}
+    restart: unless-stopped
+
+  # Kitbash Core - Main orchestrator process
+  # Listens to Redis, makes routing decisions, coordinates workers
+  kitbash_core:
+    build:
+      context: .
+      dockerfile: Dockerfile.kitbash
+    container_name: kitbash_core
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - KITBASH_ENVIRONMENT=${KITBASH_ENVIRONMENT:-development}
+      - KITBASH_LOG_LEVEL=${KITBASH_LOG_LEVEL:-INFO}
+      - LAYER0_TIMEOUT_MS=${LAYER0_TIMEOUT_MS:-10}
+      - LAYER1_TIMEOUT_MS=${LAYER1_TIMEOUT_MS:-10}
+      - LAYER4_TIMEOUT_MS=${LAYER4_TIMEOUT_MS:-2000}
+    volumes:
+      - ./:/app
+    networks:
+      - kitbash_network
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+  # BitNet Worker - Layer 1 (Fast pattern matching)
+  # Listens to Redis for queries, performs pattern matching
+  bitnet_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+      args:
+        WORKER_TYPE: bitnet
+    container_name: kitbash_bitnet
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - WORKER_NAME=bitnet
+      - WORKER_PORT=5001
+      - KITBASH_LOG_LEVEL=${KITBASH_LOG_LEVEL:-INFO}
+    volumes:
+      - ./:/app
+    networks:
+      - kitbash_network
+    ports:
+      - "5001:5001"
+    restart: unless-stopped
+
+  # Cartridge Worker - Layer 2 (Fact retrieval)
+  # Stub for future implementation - will handle fact lookup and synthesis
+  cartridge_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+      args:
+        WORKER_TYPE: cartridge
+    container_name: kitbash_cartridge
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - WORKER_NAME=cartridge
+      - WORKER_PORT=5002
+      - KITBASH_LOG_LEVEL=${KITBASH_LOG_LEVEL:-INFO}
+    volumes:
+      - ./:/app
+    networks:
+      - kitbash_network
+    ports:
+      - "5002:5002"
+    restart: unless-stopped
+
+  # Kobold Worker - Layer 4 (LLM reasoning)
+  # Stub for future implementation - will connect to KoboldCpp
+  # Only enabled if KOBOLD_ENABLED=true
+  kobold_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+      args:
+        WORKER_TYPE: kobold
+    container_name: kitbash_kobold
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - WORKER_NAME=kobold
+      - WORKER_PORT=5003
+      - KITBASH_LOG_LEVEL=${KITBASH_LOG_LEVEL:-INFO}
+    volumes:
+      - ./:/app
+    networks:
+      - kitbash_network
+    ports:
+      - "5003:5003"
+    # Only start if explicitly enabled
+    profiles:
+      - kobold
+    restart: unless-stopped
+
+networks:
+  kitbash_network:
+    driver: bridge
+
+volumes:
+  redis_data:
+    driver: local
+
+# Configuration notes:
+#
+# SERVICES:
+# - redis: Central blackboard (port 6379)
+# - kitbash_core: Main orchestrator process (no external port, uses Redis)
+# - bitnet_worker: Layer 1 fast inference (port 5001)
+# - cartridge_worker: Layer 2 fact retrieval (port 5002)
+# - kobold_worker: Layer 4 LLM reasoning (port 5003, optional profile)
+#
+# USAGE:
+# - Default (redis + core + bitnet + cartridge):
+#   docker-compose up -d
+#
+# - With Kobold LLM support:
+#   docker-compose --profile kobold up -d
+#
+# - Scale workers:
+#   docker-compose up -d --scale bitnet_worker=3
+#
+# DEBUGGING:
+# - Shell into container:
+#   docker-compose exec redis redis-cli
+#   docker-compose exec kitbash_core bash
+#
+# - View logs:
+#   docker-compose logs -f                    # All services
+#   docker-compose logs -f redis              # Just Redis
+#   docker-compose logs -f kitbash_core       # Just Kitbash
+#
+# - Monitor Redis:
+#   docker-compose exec redis redis-cli MONITOR
