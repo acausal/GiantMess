@@ -1,0 +1,35 @@
+# Kitbash Core Orchestrator - Phase 3B
+# Main orchestration process that coordinates workers via Redis
+
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# System dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY config.py .
+COPY redis_blackboard.py .
+COPY diagnostic_feed.py .
+COPY grain_router.py .
+COPY layer0_query_processor.py .
+COPY kitbash_query_engine.py .
+
+# Copy config files
+COPY kitbash_config.yaml .
+COPY .env.example .
+
+# Health check
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
+    CMD python -c "import redis; redis.Redis(host='localhost', port=6379).ping()" || exit 1
+
+# Default command - runs the query REPL when container starts
+# In production, this would run the orchestrator server
+CMD ["python", "-i", "-c", "from query_repl import QueryREPL; repl = QueryREPL(); repl.run()"]
