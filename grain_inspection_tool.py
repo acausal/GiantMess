@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """
-Grain Inspection Tool - Windows-friendly grain analysis
+Grain Inspection Tool - Popcount Distribution Analysis
 
-Inspect crystallized grains, show statistics, sample contents, etc.
+Inspect crystallized grains, analyze ternary bit distribution.
+Validates Layer 0 activation thresholds and routing assumptions.
+
+Phase 3A Component
 """
 
 import json
 import os
+import statistics
 from pathlib import Path
 from typing import Dict, List
+from collections import defaultdict
 
 
 def find_all_grains(cartridges_dir: str = "./cartridges") -> Dict[str, List[str]]:
@@ -132,6 +137,153 @@ def list_grains_by_cartridge(cartridge: str, cartridges_dir: str = "./cartridges
     print()
 
 
+def calculate_popcount(grain: Dict) -> int:
+    """Calculate popcount (number of non-zero bits) for a grain."""
+    delta = grain.get('delta', {})
+    positive_count = len(delta.get('positive', []))
+    negative_count = len(delta.get('negative', []))
+    return positive_count + negative_count
+
+
+def calculate_grain_quality(grain: Dict) -> float:
+    """Calculate quality score for a grain (0.0-1.0)."""
+    confidence = grain.get('confidence', 0.0)
+    popcount = calculate_popcount(grain)
+
+    # Optimal popcount: 100-400 bits
+    optimal_min, optimal_max = 100, 400
+
+    if popcount < 50:
+        popcount_score = popcount / 50
+    elif optimal_min <= popcount <= optimal_max:
+        popcount_score = 1.0
+    elif popcount > 500:
+        popcount_score = (1000 - popcount) / 500
+    elif popcount < optimal_min:
+        popcount_score = (popcount - 50) / (optimal_min - 50)
+    else:
+        popcount_score = (500 - popcount) / (500 - optimal_max)
+
+    return 0.6 * confidence + 0.4 * popcount_score
+
+
+def analyze_popcount_distribution(cartridges_dir: str = "./cartridges"):
+    """Analyze popcount distribution across all grains."""
+    grains_data = find_all_grains(cartridges_dir)
+
+    if not grains_data:
+        print("No grains found")
+        return
+
+    all_popcounts = []
+    all_qualities = {}
+    by_cartridge = defaultdict(list)
+    by_confidence = defaultdict(list)
+
+    # Collect data
+    for cartridge, grain_files in grains_data.items():
+        for grain_file in grain_files:
+            try:
+                with open(grain_file, 'r') as f:
+                    grain = json.load(f)
+
+                grain_id = grain.get('grain_id')
+                popcount = calculate_popcount(grain)
+                quality = calculate_grain_quality(grain)
+                confidence = grain.get('confidence', 0.0)
+
+                all_popcounts.append(popcount)
+                all_qualities[grain_id] = quality
+                by_cartridge[cartridge].append(popcount)
+
+                # Bucket by confidence
+                if confidence > 0.9:
+                    by_confidence['high (>0.9)'].append(popcount)
+                elif confidence > 0.7:
+                    by_confidence['medium (0.7-0.9)'].append(popcount)
+                else:
+                    by_confidence['low (<0.7)'].append(popcount)
+            except Exception as e:
+                print(f"Error reading {grain_file}: {e}")
+
+    if not all_popcounts:
+        print("No valid grains found")
+        return
+
+    # Print report
+    print("\n" + "=" * 80)
+    print("POPCOUNT DISTRIBUTION ANALYSIS")
+    print("=" * 80)
+
+    print(f"\nTotal grains analyzed: {len(all_popcounts)}")
+
+    print(f"\n--- POPCOUNT STATISTICS ---")
+    print(f"Min:    {min(all_popcounts):5} bits")
+    print(f"Max:    {max(all_popcounts):5} bits")
+    print(f"Mean:   {statistics.mean(all_popcounts):5.1f} bits")
+    print(f"Median: {statistics.median(all_popcounts):5.1f} bits")
+    if len(all_popcounts) > 1:
+        print(f"Stdev:  {statistics.stdev(all_popcounts):5.1f} bits")
+
+    # Percentiles
+    if len(all_popcounts) > 10:
+        print(f"\n--- PERCENTILES ---")
+        quantiles = statistics.quantiles(all_popcounts, n=100)
+        for pct in [10, 25, 50, 75, 90, 95, 99]:
+            val = quantiles[pct - 1]
+            print(f"p{pct:2d}: {val:.0f} bits")
+
+    # Quality analysis
+    qualities = list(all_qualities.values())
+    print(f"\n--- GRAIN QUALITY ---")
+    print(f"Average quality: {statistics.mean(qualities):.4f}")
+    print(f"Min quality:     {min(qualities):.4f}")
+    print(f"Max quality:     {max(qualities):.4f}")
+
+    # Confidence-based analysis
+    print(f"\n--- BY CONFIDENCE LEVEL ---")
+    for conf_level in ['high (>0.9)', 'medium (0.7-0.9)', 'low (<0.7)']:
+        if conf_level in by_confidence:
+            pops = by_confidence[conf_level]
+            print(f"\n{conf_level}:")
+            print(f"  Grains: {len(pops)}")
+            print(f"  Avg popcount: {statistics.mean(pops):.1f}")
+            print(f"  Range: {min(pops)}-{max(pops)} bits")
+
+    # Cartridge breakdown
+    print(f"\n--- BY CARTRIDGE ---")
+    for cartridge in sorted(by_cartridge.keys()):
+        pops = by_cartridge[cartridge]
+        print(f"\n{cartridge.upper()}:")
+        print(f"  Grains: {len(pops)}")
+        print(f"  Avg popcount: {statistics.mean(pops):.1f}")
+        print(f"  Range: {min(pops)}-{max(pops)} bits")
+
+    # Histogram
+    print(f"\n--- POPCOUNT HISTOGRAM ---")
+    min_pop = min(all_popcounts)
+    max_pop = max(all_popcounts)
+    bucket_size = max(1, (max_pop - min_pop) // 15)
+
+    buckets = defaultdict(int)
+    for popcount in all_popcounts:
+        bucket = (popcount - min_pop) // bucket_size
+        buckets[bucket] += 1
+
+    max_count = max(buckets.values()) if buckets else 0
+
+    for i in range(max(buckets.keys()) + 1 if buckets else 0):
+        if i not in buckets:
+            continue
+        count = buckets[i]
+        bar_width = int(40 * count / max_count) if max_count > 0 else 0
+        start = min_pop + i * bucket_size
+        end = start + bucket_size - 1
+        print(f"{start:3}-{end:3} | {'█' * bar_width} {count:3}")
+
+    print("\n" + "=" * 80 + "\n")
+
+
 def main():
     """Main menu."""
     import sys
@@ -151,9 +303,10 @@ def main():
         print("  2. List grains by cartridge")
         print("  3. Inspect a specific grain")
         print("  4. Compare cartridge compression")
-        print("  5. Exit")
+        print("  5. Analyze popcount distribution")
+        print("  6. Exit")
         
-        choice = input("\nChoice (1-5): ").strip()
+        choice = input("\nChoice (1-6): ").strip()
         
         if choice == "1":
             print_grain_summary()
@@ -220,6 +373,9 @@ def main():
             print()
         
         elif choice == "5":
+            analyze_popcount_distribution()
+
+        elif choice == "6":
             print("Goodbye!")
             break
         

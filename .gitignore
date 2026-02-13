@@ -59,3 +59,9 @@ logs/
 # Temporary files
 *.tmp
 *.temp
+
+# Generated diagnostic/analysis output
+diagnostics.jsonl
+diagnostics.csv
+grain_analysis.json
+mock_grain_analysis.json
