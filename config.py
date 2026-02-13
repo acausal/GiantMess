@@ -16,7 +16,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 import yaml
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
 logger = logging.getLogger(__name__)
@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 
 class RedisConfig(BaseModel):
     """Redis connection configuration."""
+    model_config = ConfigDict(validate_assignment=True)
+
     host: str = Field(default="localhost", description="Redis server host")
     port: int = Field(default=6379, description="Redis server port")
     db: int = Field(default=0, description="Redis database number")
@@ -31,9 +33,6 @@ class RedisConfig(BaseModel):
     connection_timeout: int = Field(default=5, description="Connection timeout in seconds")
     socket_timeout: int = Field(default=5, description="Socket timeout in seconds")
     retry_on_timeout: bool = Field(default=True, description="Retry on timeout")
-
-    class Config:
-        validate_assignment = True
 
 
 class LayerConfig(BaseModel):
@@ -70,7 +69,8 @@ class PerformanceConfig(BaseModel):
     escalation_confidence_threshold: float = 0.60
     query_parallelization: bool = False
 
-    @validator('consensus_confidence_threshold', 'escalation_confidence_threshold')
+    @field_validator('consensus_confidence_threshold', 'escalation_confidence_threshold')
+    @classmethod
     def validate_thresholds(cls, v):
         if not 0.0 <= v <= 1.0:
             raise ValueError("Threshold must be between 0.0 and 1.0")
@@ -79,6 +79,8 @@ class PerformanceConfig(BaseModel):
 
 class KitbashConfig(BaseModel):
     """Main Kitbash configuration model."""
+    model_config = ConfigDict(validate_assignment=True)
+
     redis: RedisConfig
     kitbash: Dict[str, Any]
     layers: Dict[str, LayerConfig]
@@ -86,9 +88,6 @@ class KitbashConfig(BaseModel):
     diagnostics: DiagnosticsConfig
     performance: PerformanceConfig
     redis_keys: Dict[str, str]
-
-    class Config:
-        validate_assignment = True
 
 
 class ConfigLoader:
