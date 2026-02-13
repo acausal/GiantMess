@@ -6,6 +6,7 @@ Handles duplicate content hashes and proper index initialization
 """
 
 import sys
+import shutil
 from pathlib import Path
 from kitbash_builder import CartridgeBuilder
 from kitbash_cartridge import EpistemicLevel
@@ -28,6 +29,7 @@ CARTRIDGE_SPECS = [
 def build_cartridge(name: str, data_file: str, epistemic_level: EpistemicLevel, description: str) -> bool:
     """
     Build a single cartridge from markdown data.
+    Handles re-runs by clearing existing cartridges first.
     
     Args:
         name: Cartridge name
@@ -42,8 +44,13 @@ def build_cartridge(name: str, data_file: str, epistemic_level: EpistemicLevel, 
         # Check data file exists
         data_path = Path(data_file)
         if not data_path.exists():
-            print(f"       ✗ Data file not found: {data_file}")
+            print(f"       âœ— Data file not found: {data_file}")
             return False
+        
+        # Remove existing cartridge if it exists (clean rebuild)
+        cartridge_path = Path("./cartridges") / f"{name}.kbc"
+        if cartridge_path.exists():
+            shutil.rmtree(cartridge_path)
         
         # Create and build cartridge
         builder = CartridgeBuilder(name, "./cartridges")
@@ -64,7 +71,7 @@ def build_cartridge(name: str, data_file: str, epistemic_level: EpistemicLevel, 
         return True
         
     except Exception as e:
-        print(f"       ✗ ERROR: {type(e).__name__}: {str(e)}")
+        print(f"       âœ— ERROR: {type(e).__name__}: {str(e)}")
         return False
 
 
@@ -87,7 +94,7 @@ def main():
         
         if build_cartridge(name, data_file, level, desc):
             successful += 1
-            print(f"✓ Cartridge '{name}' built successfully")
+            print(f"âœ“ Cartridge '{name}' built successfully")
         else:
             failed += 1
     
@@ -100,11 +107,11 @@ def main():
     print(f"Cartridge directory: ./cartridges/")
     
     if failed > 0:
-        print(f"\n✗ {failed} cartridge(s) failed to build")
+        print(f"\nâœ— {failed} cartridge(s) failed to build")
         print("   Check that all data files exist in current directory")
         return False
     
-    print("\n✓ All cartridges built successfully!")
+    print("\nâœ“ All cartridges built successfully!")
     return True
 
 
