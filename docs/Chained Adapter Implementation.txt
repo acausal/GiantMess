@@ -1,0 +1,12 @@
+﻿Chaining QLoRAs in Token Space
+To achieve the "calculation loop" you described for a 1.5B model, you can use an orchestration layer (like PEFT with custom switching) that treats adapters as different "head states" or "thinking modes."
+1. The Adapter-Switching Loop
+Instead of generating text, clearing the prompt, and starting over, you can use Adapter Merging (Weighted) or On-the-fly Switching:
+* Step A (Gap Analysis): Activate the gap QLoRA. Generate tokens until a hidden trigger token (e.g., <|thought_end|>) is reached.
+* Step B (Contextual Anchor): Without clearing the KV-cache, switch the active adapter to anchor. The model now "sees" the gap analysis in its context window and calculates the anchoring facts based on that.
+* Step C (Synthesis): Switch to the synthesis adapter to format the final response for the user.
+2. Benefits for a 1.5B Model
+* Weight Efficiency: By training them separately, you prevent the "catastrophic forgetting" or "weight interference" that happens when a tiny model tries to learn three complex, distinct logical behaviors at once.
+* Deterministic Routing: Since your safety layer is external, you can deterministically choose which adapters to trigger. If the external filter flags "Legal," you can skip the anchor adapter entirely and go straight to gap (asking for jurisdiction).
+3. Token-Space Calculation
+If you want to stay purely in "token space" (calculating the hidden states), look into LoRA-X or LoRA-Switching frameworks. This allows you to route the forward pass through specific adapter matrices based on the token sequence being generated, creating a "Multi-Adapter" inference path that feels like a single continuous thought process.
