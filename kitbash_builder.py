@@ -39,13 +39,13 @@ class CartridgeBuilder:
     def build(self) -> Cartridge:
         """Create the cartridge and return it."""
         self.cart.create()
-        print(f"âœ“ Created cartridge: {self.cartridge_name}")
+        print(f"✓ Created cartridge: {self.cartridge_name}")
         return self.cart
     
     def save(self) -> None:
         """Save cartridge to disk."""
         self.cart.save()
-        print(f"âœ“ Saved {self.fact_count} facts to {self.cartridge_name}")
+        print(f"✓ Saved {self.fact_count} facts to {self.cartridge_name}")
     
     def load_cartridge(self) -> Cartridge:
         """Load existing cartridge."""
@@ -53,26 +53,37 @@ class CartridgeBuilder:
         return self.cart
 
     def _parse_yaml_frontmatter(self, text: str) -> Tuple[dict, str]:
-        """Extract YAML frontmatter from markdown."""
-        if not text.strip().startswith("---"):
-            return {}, text
+        """
+        Extract YAML frontmatter from markdown.
         
+        Returns: (frontmatter_dict, remaining_markdown_text)
+        """
+        # Check if text starts with ---
+        if not text.strip().startswith("---"):
+            return {}, text  # No frontmatter
+        
+        # Find closing ---
         parts = text.split("---", 2)
         if len(parts) < 3:
-            return {}, text
+            return {}, text  # Malformed, treat as no frontmatter
         
         yaml_text = parts[1]
         markdown_text = parts[2]
         
+        # Parse YAML
         try:
             import yaml
             frontmatter = yaml.safe_load(yaml_text)
             return frontmatter or {}, markdown_text
         except ImportError:
+            # Fallback: simple key-value parsing (no external dep)
             return self._parse_yaml_simple(yaml_text), markdown_text
 
     def _parse_yaml_simple(self, yaml_text: str) -> dict:
-        """Simple YAML parser (no external dependencies)."""
+        """
+        Simple YAML parser (no external dependencies).
+        Only handles basic key: value and key: [item1, item2] formats.
+        """
         result = {}
         for line in yaml_text.strip().split('\n'):
             if ':' not in line:
@@ -81,27 +92,38 @@ class CartridgeBuilder:
             key = key.strip()
             value = value.strip()
             
+            # Parse arrays [item1, item2]
             if value.startswith('[') and value.endswith(']'):
                 items = value[1:-1].split(',')
                 result[key] = [item.strip() for item in items]
+            # Parse booleans
             elif value.lower() == 'true':
                 result[key] = True
             elif value.lower() == 'false':
                 result[key] = False
+            # Parse numbers
             elif value.replace('.', '', 1).isdigit():
                 result[key] = float(value) if '.' in value else int(value)
+            # Parse strings
             else:
-                result[key] = value.strip('"\'')
+                result[key] = value.strip('"\'')  # Remove quotes if present
         
         return result
 
     def _apply_frontmatter(self, frontmatter: dict) -> None:
-        """Apply YAML frontmatter to cartridge manifest."""
+        """
+        Apply YAML frontmatter to cartridge manifest and builder state.
+        """
         from datetime import datetime
+        
+        if 'cartridge_name' in frontmatter:
+            # Note: already set during __init__, but could override
+            pass
         
         if not self.cart.manifest:
             self.cart.manifest = {}
         
+        # Apply frontmatter fields to manifest
         self.cart.manifest['description'] = frontmatter.get('description', '')
         self.cart.manifest['epistemic_level'] = frontmatter.get('epistemic_level', 'L2_AXIOMATIC')
         self.cart.manifest['domain'] = frontmatter.get('domain', 'general')
@@ -112,24 +134,39 @@ class CartridgeBuilder:
         self.cart.manifest['temporal_scope'] = frontmatter.get('temporal_scope', None)
 
     def _parse_temporal_bounds(self, temporal_str: Optional[str]) -> dict:
-        """Parse temporal bounds string into start/end ISO8601 dates."""
+        """
+        Parse temporal bounds string into start/end ISO8601 dates.
+        
+        Returns: {
+            'start': ISO8601 string or None,
+            'end': ISO8601 string or None,
+            'approximate': bool,
+            'raw_format': str (for debugging)
+        }
+        """
         from datetime import datetime, timezone
+        import re
         
         if not temporal_str:
             return {'start': None, 'end': None, 'approximate': False, 'raw_format': None}
         
         temporal_str = temporal_str.strip()
         
+        # Handle "eternal" (no bounds)
         if temporal_str.lower() in ['eternal', 'always', 'indefinite']:
             return {'start': None, 'end': None, 'approximate': False, 'raw_format': temporal_str}
         
+        # Handle "sometime" / "eventually" (unbounded future)
         if temporal_str.lower() in ['sometime', 'eventually']:
             return {'start': datetime.now(timezone.utc).isoformat(), 'end': None, 'approximate': True, 'raw_format': temporal_str}
         
+        # Handle approximate future: "~5_billion_years"
         match = re.match(r'~(\d+)_(\w+)', temporal_str)
         if match:
+            # Just use today as start, no end (approximate)
             return {'start': datetime.now(timezone.utc).isoformat(), 'end': None, 'approximate': True, 'raw_format': temporal_str}
         
+        # Handle "X to Y" format
         if ' to ' in temporal_str:
             parts = temporal_str.split(' to ')
             start_str = parts[0].strip()
@@ -140,35 +177,47 @@ class CartridgeBuilder:
             
             return {'start': start_date, 'end': end_date, 'approximate': False, 'raw_format': temporal_str}
         
+        # Single date (treat as start)
         single_date = self._parse_date_component(temporal_str)
         return {'start': single_date, 'end': None, 'approximate': False, 'raw_format': temporal_str}
 
     def _parse_date_component(self, date_str: str) -> Optional[str]:
-        """Parse a single date component."""
+        """
+        Parse a single date component.
+        
+        Handles:
+        - ISO8601: 2025-02-12
+        - Year only: 2025
+        - Keywords: past, future, today, now
+        """
         from datetime import datetime, timezone
         
         date_str = date_str.strip().lower()
         
-        if date_str in ['past', 'beginning']:
-            return None
+        # Keywords
+        if date_str in ['past', 'beginning', 'always']:
+            return None  # Unbounded past
         
         if date_str in ['future', 'forever']:
-            return None
+            return None  # Unbounded future
         
         if date_str in ['today', 'now']:
             return datetime.now(timezone.utc).isoformat()
         
+        # Try ISO8601: 2025-02-12
         try:
             dt = datetime.fromisoformat(date_str + 'T00:00:00' if 'T' not in date_str else date_str)
             return dt.replace(tzinfo=timezone.utc).isoformat()
         except ValueError:
             pass
         
+        # Try year only: 2025
         if len(date_str) == 4 and date_str.isdigit():
             year = int(date_str)
             dt = datetime(year, 1, 1, tzinfo=timezone.utc)
             return dt.isoformat()
         
+        # Try year-month: 2025-02
         if len(date_str) == 7 and '-' in date_str:
             try:
                 dt = datetime.fromisoformat(date_str + '-01T00:00:00')
@@ -176,16 +225,19 @@ class CartridgeBuilder:
             except ValueError:
                 pass
         
+        # Can't parse, return None
+        print(f"⚠ Warning: Could not parse temporal bound: {date_str}")
         return None
-    
+
+
     # ========================================================================
     # MARKDOWN FORMAT
     # ========================================================================
     
     def from_markdown(self, filepath: str, 
-                     domain_pattern: str = "#",
-                     subdomain_pattern: str = "##",
-                     fact_pattern: str = "-") -> None:
+                 domain_pattern: str = "#",
+                 subdomain_pattern: str = "##",
+                 fact_pattern: str = "-") -> None:
         """
         Load facts from markdown file with optional YAML frontmatter.
         
@@ -278,6 +330,8 @@ class CartridgeBuilder:
         
         print(f"✓ Loaded {self.fact_count} facts from {filepath}")
 
+
+    
     # ========================================================================
     # CSV FORMAT
     # ========================================================================
@@ -338,7 +392,7 @@ class CartridgeBuilder:
                 self.cart.add_fact(content, ann)
                 self.fact_count += 1
         
-        print(f"âœ“ Loaded {self.fact_count} facts from {filepath}")
+        print(f"✓ Loaded {self.fact_count} facts from {filepath}")
     
     # ========================================================================
     # JSON FORMAT
@@ -406,7 +460,7 @@ class CartridgeBuilder:
             self.cart.add_fact(content, ann)
             self.fact_count += 1
         
-        print(f"âœ“ Loaded {self.fact_count} facts from {filepath}")
+        print(f"✓ Loaded {self.fact_count} facts from {filepath}")
     
     # ========================================================================
     # PLAIN TEXT FORMAT
@@ -452,7 +506,7 @@ class CartridgeBuilder:
                 self.cart.add_fact(fact, ann)
                 self.fact_count += 1
         
-        print(f"âœ“ Loaded {self.fact_count} facts from {filepath}")
+        print(f"✓ Loaded {self.fact_count} facts from {filepath}")
     
     # ========================================================================
     # BATCH OPERATIONS
@@ -489,9 +543,9 @@ class CartridgeBuilder:
                     elif filepath.suffix == '.txt':
                         self.from_text(str(filepath), domain=domain or "general")
                 except Exception as e:
-                    print(f"âš  Skipped {filepath}: {e}")
+                    print(f"⚠ Skipped {filepath}: {e}")
         
-        print(f"âœ“ Processed {len(files)} files from {dirpath}")
+        print(f"✓ Processed {len(files)} files from {dirpath}")
     
     # ========================================================================
     # MANUAL OPERATIONS
@@ -607,7 +661,7 @@ def create_from_markdown_example():
     markdown = """
 # Physics
 ## Thermodynamics
-- Water boils at 100Â°C at sea level | Handbook_Physics | 0.99
+- Water boils at 100°C at sea level | Handbook_Physics | 0.99
 - Temperature affects molecular motion | basic_science | 0.95
 - Heat flows from hot to cold objects | Thermodynamics | 0.98
 
@@ -635,7 +689,7 @@ def create_from_csv_example():
         writer = csv.DictWriter(f, fieldnames=["content", "domain", "confidence", "source", "tags"])
         writer.writeheader()
         writer.writerow({
-            "content": "PLA gels at 60Â°C",
+            "content": "PLA gels at 60°C",
             "domain": "bioplastics",
             "confidence": "0.92",
             "source": "Handbook_2023",
@@ -661,9 +715,9 @@ if __name__ == "__main__":
     builder = CartridgeBuilder("manual_example")
     builder.build()
     
-    builder.add_fact("Water boils at 100Â°C", domain="physics", confidence=0.99)
+    builder.add_fact("Water boils at 100°C", domain="physics", confidence=0.99)
     builder.add_fact("Gravity pulls downward", domain="physics", confidence=0.99)
-    builder.add_fact("PLA requires 60Â°C for gelling", domain="bioplastics", confidence=0.92)
+    builder.add_fact("PLA requires 60°C for gelling", domain="bioplastics", confidence=0.92)
     
     builder.set_metadata(
         description="Basic physics and materials science",
@@ -678,20 +732,26 @@ if __name__ == "__main__":
     print("2. From markdown:")
     markdown_content = """# Bioplastics
 ## PLA
-- PLA requires 60Â°C Â±5Â°C for optimal gelling | Handbook_2023 | 0.92
+- PLA requires 60°C ±5°C for optimal gelling | Handbook_2023 | 0.92
 - Temperature affects polymer crystallinity | Research_2024 | 0.85
 
 ## General
 - Synthetic polymers are more stable than natural ones | BasicScience | 0.9
 """
     
-    with open("/tmp/test.md", "w") as f:
+    # NEW:
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        temp_path = f.name
         f.write(markdown_content)
     
-    builder2 = CartridgeBuilder("markdown_example")
-    builder2.build()
-    builder2.from_markdown("/tmp/test.md")
-    builder2.save()
-    print(f"Created: {builder2.get_stats()}\n")
+    try:
+        builder2 = CartridgeBuilder("markdown_example")
+        builder2.build()
+        builder2.from_markdown(temp_path)
+        builder2.save()
+        print(f"Created: {builder2.get_stats()}\n")
+    finally:
+        Path(temp_path).unlink(missing_ok=True)
     
-    print("âœ“ Examples complete")
+    print("✓ Examples complete")
