@@ -173,7 +173,8 @@ class RedisBlackboard:
             grain_data: Grain data (dict with ternary representation)
         """
         key = f"{self.prefix}grains:{fact_id}"
-        self.redis.hset(key, mapping={"data": json.dumps(grain_data), "updated_at": datetime.now().isoformat()})
+        self.redis.hset(key, "data", json.dumps(grain_data))
+        self.redis.hset(key, "updated_at", datetime.now().isoformat())
         logger.debug(f"Stored grain: {fact_id}")
 
     def get_grain(self, fact_id: str) -> Optional[Dict[str, Any]]:
